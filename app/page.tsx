@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { sdk } from '@sovereignfs/sdk';
 import styles from './healthlog.module.css';
 
@@ -10,6 +11,9 @@ export default async function HealthLogPage() {
       <p className={styles.lead}>
         {session ? `Hello, ${session.user.name}!` : 'Hello, world!'}
       </p>
+      <Link href="/healthlog/profile" className={styles.profileLink}>
+        Go to your profile →
+      </Link>
     </div>
   );
 }

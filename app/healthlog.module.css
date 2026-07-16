@@ -18,3 +18,9 @@
   color: var(--sv-color-text-muted);
   margin: 0;
 }
+
+.profileLink {
+  font-size: var(--sv-font-size-md);
+  color: var(--sv-color-text-primary);
+  width: fit-content;
+}

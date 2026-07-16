@@ -13,8 +13,8 @@ import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm
  * `start_date`, `end_date`) are stored as `text` ISO date strings
  * ('YYYY-MM-DD') to avoid spurious timezone drift. Fields that are a genuine
  * point in time (`measured_at`, `noted_at`, `created_at`, `updated_at`) are
- * stored as `integer` epoch-ms, set by the app layer (no DB-generated
- * defaults), matching sovereign-wallet's convention.
+ * stored as `integer` epoch seconds, set by the app layer (no DB-generated
+ * defaults), matching sovereign-wallet's/sovereign-tasks' `now()` convention.
  */
 
 export const healthlogProfiles = sqliteTable(

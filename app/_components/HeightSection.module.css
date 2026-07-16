@@ -1,0 +1,95 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-3);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--sv-font-size-lg);
+  font-weight: var(--sv-font-weight-semibold);
+  color: var(--sv-color-text-primary);
+}
+
+.current {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sv-space-2);
+}
+
+.currentValue {
+  font-size: var(--sv-font-size-2xl);
+  font-weight: var(--sv-font-weight-semibold);
+  color: var(--sv-color-text-primary);
+}
+
+.currentDate {
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-muted);
+}
+
+.currentEmpty {
+  font-size: var(--sv-font-size-md);
+  color: var(--sv-color-text-muted);
+}
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-1);
+}
+
+.historyRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-primary);
+  padding: var(--sv-space-1) 0;
+  border-bottom: 1px solid var(--sv-color-border);
+}
+
+.historyDate {
+  color: var(--sv-color-text-muted);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-2);
+}
+
+.formRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sv-space-3);
+  flex-wrap: wrap;
+}
+
+.valueField {
+  width: 6rem;
+}
+
+.unitField {
+  width: 6rem;
+}
+
+.dateField {
+  width: 10rem;
+}
+
+.submit {
+  margin-bottom: 1px;
+}
+
+.feedbackError {
+  margin: 0;
+  font-size: var(--sv-font-size-sm);
+  padding: var(--sv-space-2) var(--sv-space-3);
+  border-radius: var(--sv-radius-md);
+  border: 1px solid var(--sv-color-error-border);
+  background-color: var(--sv-color-error-surface);
+  color: var(--sv-color-error-text);
+}
