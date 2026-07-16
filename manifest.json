@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "fs.sovereign.healthlog",
+  "name": "HealthLog",
+  "version": "0.1.0",
+  "description": "A private personal health profile, measurements, labs, medications, and notes tracker.",
+  "type": "sovereign",
+  "runtime": "native",
+  "routePrefix": "/healthlog",
+  "shell": "default",
+  "database": {
+    "isolation": "isolated",
+    "dialect": "sqlite"
+  },
+  "icon": "icon.svg",
+  "permissions": ["auth:session", "db:readWrite"],
+  "repository": "https://github.com/sovereignfs/sovereign-healthlog",
+  "compatibility": {
+    "minPlatformVersion": "0.19.0"
+  }
+}

@@ -39,7 +39,7 @@ level more granular than the spec's phase groupings.
 
 | ID | Task | Depends on | Status |
 | --- | --- | --- | --- |
-| HL-00 | Bootstrap this repo: `package.json`, `tsconfig` (extend `@sovereignfs/tsconfig`), manifest.json per SPEC's proposed manifest (id `fs.sovereign.healthlog`, `type: sovereign`, `shell: default`, `database.isolation: isolated`/`dialect: sqlite`), `icon.svg`, README pointing to SPEC.md + this roadmap. Confirm SPEC open question 7 (plugin name) is settled — this repo/directory is already named `sovereign-healthlog`, so treat that as the working decision unless the developer says otherwise. | — | ⬜ |
+| HL-00 | Bootstrap this repo: `package.json`, `tsconfig` (extend `@sovereignfs/tsconfig`), manifest.json per SPEC's proposed manifest (id `fs.sovereign.healthlog`, `type: sovereign`, `shell: default`, `database.isolation: isolated`/`dialect: sqlite`), `icon.svg`, README pointing to SPEC.md + this roadmap. Confirm SPEC open question 7 (plugin name) is settled — this repo/directory is already named `sovereign-healthlog`, so treat that as the working decision unless the developer says otherwise. | — | ✅ |
 
 ---
 
@@ -112,3 +112,4 @@ don't let the reminders blocker hold up the rest of the milestone.
 | Date | Change |
 | --- | --- |
 | 2026-07-16 | Initial roadmap, derived from SPEC.md v0.1 (Draft) plus a `claude-sv` platform-readiness audit (`docs/roadmap.md` as of this date). |
+| 2026-07-16 | HL-00 done: repo bootstrap — `package.json`, `tsconfig.json` (extends `@sovereignfs/tsconfig/nextjs.json`), `manifest.json`, `icon.svg`, `.gitignore`, `LICENSE` (AGPL-3.0-or-later), `README.md`, and a minimal `app/page.tsx` home route, matching the `sovereign-wallet`/`sovereign-tasks` external-plugin bootstrap conventions. `minPlatformVersion` set to `0.19.0` (the platform's current version) rather than SPEC's draft `0.10.0` floor. Manifest permissions deliberately trimmed to `auth:session`+`db:readWrite` only — SPEC's proposed manifest also lists `data:provide`/`activity:write` up front, but those aren't exercised until later phases (HL-12 activity logging, HL-21 data contracts); added to the manifest when those tasks land, not before, matching how `sovereign-wallet` grew its own permission list incrementally rather than over-asking at install time. No CI workflow — neither `sovereign-tasks` nor `sovereign-plainwrite` carry one, and `sovereign-wallet` removed its own after bootstrap. |
