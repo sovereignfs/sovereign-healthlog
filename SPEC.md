@@ -250,8 +250,8 @@ One row per user.
 | `user_id`                 | string    | Part of unique key with `tenant_id`. |
 | `display_name`            | string?   | Optional local display override. |
 | `date_of_birth`           | date?     | Optional. |
-| `sex_at_birth`            | string?   | Optional. Free-text or constrained enum; see open question 1. |
-| `gender_identity`         | string?   | Optional. |
+| `sex_at_birth`            | string?   | Optional. Constrained enum: `female`, `male`, `intersex`, `unspecified`. Resolved open question 1. |
+| `gender_identity`         | string?   | Optional. Free text — self-described, resolved open question 1. |
 | `blood_type`              | string?   | Optional. |
 | `preferred_units`         | json      | Measurement display preferences. |
 | `allergies`               | text?     | Optional free text in v0.1. Structured allergies are deferred. |
@@ -491,19 +491,42 @@ layer.
 
 ## Open questions
 
-1. **Profile fields:** should `sex_at_birth` and `gender_identity` be free text,
-   enum options, or user-configurable values?
-2. **Units:** should v0.1 store values exactly as entered only, or also store a
-   normalized canonical value for easier charting?
-3. **Medication modeling:** should dose/frequency remain free text until
-   reminders land, or should v0.1 introduce structured schedules?
-4. **Lab templates:** should common lab names/units be suggested from a local
-   dictionary, or should v0.1 stay fully manual?
+1. **Profile fields:** ✅ Resolved (HL-01) — split, not one shared shape.
+   `sex_at_birth` is a small constrained enum (`female`/`male`/`intersex`/
+   `unspecified`): it has real clinical relevance (some lab reference ranges
+   and drug dosing are sex-linked), and free text would fragment values in a
+   way that defeats that purpose. `gender_identity` stays free text — it's a
+   personal, self-described field with no universally-correct fixed value
+   set, and forcing an enum there would be actively exclusionary. Both remain
+   fully optional.
+2. **Units:** ✅ Resolved (HL-01) — store exactly as entered, no normalized
+   canonical column in v0.1. Matches HLG-12 as written and `lib/units.ts`'s
+   own scope note ("display helpers, not full conversion"). A normalized
+   column added speculatively now would be a guess at what v0.2 charting
+   (HLG-60) actually needs; better to let that task add it once the chart
+   requirements (single-unit series vs. render-time conversion vs.
+   unit-grouped display) are concrete. Flagged as a known input to HL-14.
+3. **Medication modeling:** ✅ Resolved (HL-01) — dose/frequency stay free
+   text in v0.1, matching the data model's existing `dose`/`frequency_text`
+   columns and their "avoid unsafe parsing" rationale. Structured schedules
+   are introduced alongside reminders in v0.2 (HL-18), once the actual
+   scheduling requirements (`sdk.jobs`, RFC 0046) are available to design
+   against — building a schedule structure now would likely be reworked once
+   that requirement is concrete.
+4. **Lab templates:** ✅ Resolved (HL-01) — a small local suggestion
+   dictionary (~40 common test names with typical unit, e.g. "LDL
+   Cholesterol" → mg/dL, "HbA1c" → %, "TSH" → mIU/L), used only as
+   client-side autocomplete in `lib/lab-matching.ts`. Never required or
+   enforced — any free-text name remains valid — but nudging toward
+   consistent naming directly improves HLG-24's name-based previous-value
+   matching, and it's a static list with no external terminology API or PHI
+   leaving the browser.
 5. **Sensitive data contracts:** should HealthLog expose any data contracts by
    default, or require an explicit per-contract opt-in from inside HealthLog?
 6. **Admin support:** should admins be able to see aggregate plugin health
    metrics without seeing health contents?
-7. **Name:** HealthLog is the working name; confirm before repository creation.
+7. **Name:** ✅ Resolved (HL-00) — HealthLog confirmed; this repository was
+   created under that name.
 
 ---
 
