@@ -23,6 +23,9 @@ export default async function HealthLogPage() {
       <Link href="/healthlog/medications" className={styles.profileLink}>
         Go to your medications →
       </Link>
+      <Link href="/healthlog/notes" className={styles.profileLink}>
+        Go to your notes →
+      </Link>
     </div>
   );
 }

@@ -47,3 +47,23 @@ export function todayLocalDateOnly(): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+
+/** A `measured_at`/`noted_at` epoch-seconds timestamp as a local 'YYYY-MM-DD'
+ * string — for compact record labels (HLG-41's linked-record pickers) where
+ * a full locale-formatted date/time would be too long, and where computing
+ * the label server-side means the browser's `Intl` locale isn't available. */
+export function epochToLocalDateOnly(epochSeconds: number): string {
+  const d = new Date(epochSeconds * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Local 'YYYY-MM-DDTHH:mm' for `<input type="datetime-local">` defaults —
+ * parsed back as local time per the ECMA-262 Date Time String Format (no
+ * UTC round-trip pitfall, unlike the date-only case `parseLocalDateOnly`
+ * guards against). */
+export function toLocalDateTimeInputValue(epochSeconds: number): string {
+  const d = new Date(epochSeconds * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}

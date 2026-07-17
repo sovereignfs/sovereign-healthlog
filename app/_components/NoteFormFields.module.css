@@ -1,0 +1,10 @@
+.row {
+  display: flex;
+  gap: var(--sv-space-3);
+  flex-wrap: wrap;
+}
+
+.row > * {
+  flex: 1;
+  min-width: 10rem;
+}

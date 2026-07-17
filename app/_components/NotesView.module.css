@@ -1,0 +1,71 @@
+.view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-5);
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-3);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-2);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sv-space-3);
+  flex-wrap: wrap;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sv-space-2);
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--sv-font-size-md);
+  font-weight: var(--sv-font-weight-semibold);
+  color: var(--sv-color-text-primary);
+}
+
+.cardActions {
+  display: flex;
+  gap: var(--sv-space-1);
+  flex-wrap: wrap;
+}
+
+.date {
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-muted);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-primary);
+  white-space: pre-wrap;
+}
+
+.linkChip {
+  align-self: flex-start;
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-muted);
+  padding: var(--sv-space-1) var(--sv-space-2);
+  border-radius: var(--sv-radius-md);
+  background-color: var(--sv-color-surface-raised);
+}

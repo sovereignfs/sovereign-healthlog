@@ -1,7 +1,7 @@
 'use server';
 
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -11,15 +11,25 @@ import {
   healthlogLabResults,
   healthlogMeasurements,
   healthlogMedications,
+  healthlogNotes,
   healthlogProfiles,
 } from '../_db/schema';
-import { formOptionalString, formString, now, parseLocalDateOnly, todayLocalDateOnly } from './formUtils';
+import {
+  epochToLocalDateOnly,
+  formOptionalString,
+  formString,
+  now,
+  parseLocalDateOnly,
+  todayLocalDateOnly,
+} from './formUtils';
 import type { LabFlag, LabValueKind } from './labFormat';
 import { LAB_VALUE_KINDS, formatLabResultValue } from './labFormat';
 import { normalizeTestName } from './labMatching';
-import { FIXED_MEASUREMENT_TYPES } from './measurementTypes';
+import { FIXED_MEASUREMENT_TYPES, MEASUREMENT_TYPE_LABELS } from './measurementTypes';
 import type { MedicationKind, MedicationStatus } from './medications';
 import { MEDICATION_KINDS, computeEffectiveStatus } from './medications';
+import type { NoteCategory, NoteLinkType } from './notes';
+import { NOTE_CATEGORIES, NOTE_LINK_TYPES } from './notes';
 import type { PreferredUnits } from './units';
 import { DEFAULT_PREFERRED_UNITS, parsePreferredUnits, serializePreferredUnits } from './units';
 
@@ -1187,4 +1197,288 @@ export async function deleteMedicationSeries(seriesId: string): Promise<void> {
       ),
     );
   revalidatePath('/healthlog/medications');
+}
+
+export interface LinkableRecord {
+  id: string;
+  label: string;
+}
+
+interface MeasurementLinkRow {
+  type: string;
+  value: number;
+  value2: number | null;
+  unit: string;
+  measuredAt: number;
+}
+
+function formatMeasurementLinkLabel(row: MeasurementLinkRow): string {
+  const typeLabel = (MEASUREMENT_TYPE_LABELS as Record<string, string>)[row.type] ?? row.type;
+  const valuePart =
+    row.type === 'blood_pressure' && row.value2 != null
+      ? `${row.value}/${row.value2} ${row.unit}`
+      : `${row.value} ${row.unit}`;
+  return `${typeLabel} · ${valuePart} · ${epochToLocalDateOnly(row.measuredAt)}`;
+}
+
+/** HLG-41's record pickers — capped to the 25 most recent per type, which is
+ * enough to find a just-added record without listing a user's entire
+ * history in one dropdown. */
+export async function listLinkableRecords(type: string): Promise<LinkableRecord[]> {
+  const { db, userId, tenantId } = await getContext();
+
+  if (type === 'measurement') {
+    const rows = await db
+      .select({
+        id: healthlogMeasurements.id,
+        type: healthlogMeasurements.type,
+        value: healthlogMeasurements.value,
+        value2: healthlogMeasurements.value2,
+        unit: healthlogMeasurements.unit,
+        measuredAt: healthlogMeasurements.measuredAt,
+      })
+      .from(healthlogMeasurements)
+      .where(and(eq(healthlogMeasurements.tenantId, tenantId), eq(healthlogMeasurements.userId, userId)))
+      .orderBy(desc(healthlogMeasurements.measuredAt))
+      .limit(25);
+    return rows.map((row) => ({ id: row.id, label: formatMeasurementLinkLabel(row) }));
+  }
+
+  if (type === 'lab_group') {
+    const rows = await db
+      .select({
+        id: healthlogLabGroups.id,
+        title: healthlogLabGroups.title,
+        collectedAt: healthlogLabGroups.collectedAt,
+      })
+      .from(healthlogLabGroups)
+      .where(and(eq(healthlogLabGroups.tenantId, tenantId), eq(healthlogLabGroups.userId, userId)))
+      .orderBy(desc(healthlogLabGroups.collectedAt))
+      .limit(25);
+    return rows.map((row) => ({ id: row.id, label: `${row.title} · ${row.collectedAt}` }));
+  }
+
+  if (type === 'medication') {
+    // Latest-per-series, same grouping as listMedications() — linking to an
+    // old dose version of a medication wouldn't mean anything a user
+    // expects; the current version is what "this medication" refers to.
+    const rows = await db
+      .select()
+      .from(healthlogMedications)
+      .where(and(eq(healthlogMedications.tenantId, tenantId), eq(healthlogMedications.userId, userId)))
+      .orderBy(desc(healthlogMedications.createdAt));
+    const seenSeries = new Set<string>();
+    const latest: LinkableRecord[] = [];
+    for (const row of rows) {
+      if (seenSeries.has(row.seriesId)) continue;
+      seenSeries.add(row.seriesId);
+      latest.push({ id: row.id, label: [row.name, row.dose, row.doseUnit].filter(Boolean).join(' · ') });
+      if (latest.length >= 25) break;
+    }
+    return latest;
+  }
+
+  return [];
+}
+
+export interface NoteEntry {
+  id: string;
+  notedAt: number;
+  category: NoteCategory;
+  title: string;
+  body: string;
+  linkedType: NoteLinkType | null;
+  linkedId: string | null;
+  /** Resolved for display; `null` if unlinked or the linked record no
+   * longer exists (deleted since the note was linked — shown as unlinked
+   * rather than a broken reference). */
+  linkedLabel: string | null;
+}
+
+export async function listNotes(): Promise<NoteEntry[]> {
+  const { db, userId, tenantId } = await getContext();
+  const rows = await db
+    .select()
+    .from(healthlogNotes)
+    .where(and(eq(healthlogNotes.tenantId, tenantId), eq(healthlogNotes.userId, userId)))
+    .orderBy(desc(healthlogNotes.notedAt));
+
+  const idsByType = (type: NoteLinkType) =>
+    rows.filter((row) => row.linkedType === type && row.linkedId).map((row) => row.linkedId as string);
+  const measurementIds = idsByType('measurement');
+  const labGroupIds = idsByType('lab_group');
+  const medicationIds = idsByType('medication');
+
+  const labelMap = new Map<string, string>();
+
+  if (measurementIds.length > 0) {
+    const measurementRows = await db
+      .select({
+        id: healthlogMeasurements.id,
+        type: healthlogMeasurements.type,
+        value: healthlogMeasurements.value,
+        value2: healthlogMeasurements.value2,
+        unit: healthlogMeasurements.unit,
+        measuredAt: healthlogMeasurements.measuredAt,
+      })
+      .from(healthlogMeasurements)
+      .where(
+        and(
+          eq(healthlogMeasurements.tenantId, tenantId),
+          eq(healthlogMeasurements.userId, userId),
+          inArray(healthlogMeasurements.id, measurementIds),
+        ),
+      );
+    for (const row of measurementRows) labelMap.set(row.id, formatMeasurementLinkLabel(row));
+  }
+
+  if (labGroupIds.length > 0) {
+    const groupRows = await db
+      .select({
+        id: healthlogLabGroups.id,
+        title: healthlogLabGroups.title,
+        collectedAt: healthlogLabGroups.collectedAt,
+      })
+      .from(healthlogLabGroups)
+      .where(
+        and(
+          eq(healthlogLabGroups.tenantId, tenantId),
+          eq(healthlogLabGroups.userId, userId),
+          inArray(healthlogLabGroups.id, labGroupIds),
+        ),
+      );
+    for (const row of groupRows) labelMap.set(row.id, `${row.title} · ${row.collectedAt}`);
+  }
+
+  if (medicationIds.length > 0) {
+    const medicationRows = await db
+      .select()
+      .from(healthlogMedications)
+      .where(
+        and(
+          eq(healthlogMedications.tenantId, tenantId),
+          eq(healthlogMedications.userId, userId),
+          inArray(healthlogMedications.id, medicationIds),
+        ),
+      );
+    for (const row of medicationRows) {
+      labelMap.set(row.id, [row.name, row.dose, row.doseUnit].filter(Boolean).join(' · '));
+    }
+  }
+
+  return rows.map((row) => ({
+    id: row.id,
+    notedAt: row.notedAt,
+    category: row.category as NoteCategory,
+    title: row.title,
+    body: row.body,
+    linkedType: row.linkedType as NoteLinkType | null,
+    linkedId: row.linkedId,
+    linkedLabel: row.linkedId ? (labelMap.get(row.linkedId) ?? null) : null,
+  }));
+}
+
+interface ParsedNoteInput {
+  notedAt: number;
+  category: NoteCategory;
+  title: string;
+  body: string;
+  linkedType: NoteLinkType | null;
+  linkedId: string | null;
+}
+
+function parseNoteInput(formData: FormData): ParsedNoteInput | { error: string } {
+  const title = formString(formData, 'title');
+  if (!title) return { error: 'Enter a title.' };
+
+  const body = formString(formData, 'body');
+  if (!body) return { error: 'Enter a note.' };
+
+  const categoryRaw = formString(formData, 'category');
+  if (!(NOTE_CATEGORIES as readonly string[]).includes(categoryRaw)) {
+    return { error: 'Choose a category.' };
+  }
+  const category = categoryRaw as NoteCategory;
+
+  const notedAtRaw = formString(formData, 'notedAt');
+  const notedAtDate = notedAtRaw ? new Date(notedAtRaw) : new Date();
+  if (Number.isNaN(notedAtDate.getTime())) return { error: 'Enter a valid date and time.' };
+
+  const linkedTypeRaw = formString(formData, 'linkedType');
+  const linkedIdRaw = formOptionalString(formData, 'linkedId');
+  let linkedType: NoteLinkType | null = null;
+  if ((NOTE_LINK_TYPES as readonly string[]).includes(linkedTypeRaw) && linkedIdRaw) {
+    linkedType = linkedTypeRaw as NoteLinkType;
+  }
+
+  return {
+    notedAt: Math.floor(notedAtDate.getTime() / 1000),
+    category,
+    title,
+    body,
+    linkedType,
+    linkedId: linkedType ? linkedIdRaw : null,
+  };
+}
+
+export async function addNote(
+  _prevState: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { db, userId, tenantId } = await getContext();
+  const parsed = parseNoteInput(formData);
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+
+  const ts = now();
+  try {
+    await db.insert(healthlogNotes).values({
+      id: randomUUID(),
+      tenantId,
+      userId,
+      ...parsed,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+  } catch {
+    return { ok: false, error: 'Could not save this note. Please try again.' };
+  }
+
+  revalidatePath('/healthlog/notes');
+  return { ok: true, message: 'Note added.' };
+}
+
+export async function updateNote(
+  _prevState: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { db, userId, tenantId } = await getContext();
+  const id = formString(formData, 'id');
+  if (!id) return { ok: false, error: 'Missing note id.' };
+
+  const parsed = parseNoteInput(formData);
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+
+  try {
+    await db
+      .update(healthlogNotes)
+      .set({ ...parsed, updatedAt: now() })
+      .where(
+        and(eq(healthlogNotes.id, id), eq(healthlogNotes.tenantId, tenantId), eq(healthlogNotes.userId, userId)),
+      );
+  } catch {
+    return { ok: false, error: 'Could not save this note. Please try again.' };
+  }
+
+  revalidatePath('/healthlog/notes');
+  return { ok: true, message: 'Note updated.' };
+}
+
+export async function deleteNote(id: string): Promise<void> {
+  const { db, userId, tenantId } = await getContext();
+  await db
+    .delete(healthlogNotes)
+    .where(
+      and(eq(healthlogNotes.id, id), eq(healthlogNotes.tenantId, tenantId), eq(healthlogNotes.userId, userId)),
+    );
+  revalidatePath('/healthlog/notes');
 }

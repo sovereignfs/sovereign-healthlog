@@ -3,19 +3,11 @@
 import { useState } from 'react';
 import { FormField, Input, Select, Textarea } from '@sovereignfs/ui';
 import type { MeasurementEntry } from '../_lib/actions';
+import { now, toLocalDateTimeInputValue } from '../_lib/formUtils';
 import { FIXED_MEASUREMENT_TYPES, MEASUREMENT_TYPE_LABELS } from '../_lib/measurementTypes';
 import type { PreferredUnits } from '../_lib/units';
 import { defaultUnitForType } from '../_lib/units';
 import styles from './MeasurementFormFields.module.css';
-
-function pad(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-function toLocalDateTimeInputValue(epochSeconds: number): string {
-  const d = new Date(epochSeconds * 1000);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 /**
  * Shared field set for both the add and edit dialogs. `entry` (edit mode)
@@ -118,11 +110,7 @@ export function MeasurementFormFields({
             {...field}
             name="measuredAt"
             type="datetime-local"
-            defaultValue={
-              entry
-                ? toLocalDateTimeInputValue(entry.measuredAt)
-                : toLocalDateTimeInputValue(Math.floor(Date.now() / 1000))
-            }
+            defaultValue={toLocalDateTimeInputValue(entry ? entry.measuredAt : now())}
           />
         )}
       </FormField>
