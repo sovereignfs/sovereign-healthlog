@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Button, FormField, Input, Select } from '@sovereignfs/ui';
 import type { ActionResult, HeightEntry } from '../_lib/actions';
 import { addHeightEntry } from '../_lib/actions';
+import { todayLocalDateOnly } from '../_lib/formUtils';
 import type { PreferredUnits } from '../_lib/units';
 import styles from './HeightSection.module.css';
 
@@ -14,15 +15,6 @@ function formatDate(epochSeconds: number): string {
     month: 'short',
     day: 'numeric',
   });
-}
-
-/** Local (not UTC) 'YYYY-MM-DD' for today — `toISOString()` converts to UTC
- * first, which can show the wrong default date near midnight in some
- * timezones. */
-function todayLocalDateInputValue(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 export function HeightSection({
@@ -96,12 +88,7 @@ export function HeightSection({
           </FormField>
           <FormField label="Date" className={styles.dateField}>
             {(field) => (
-              <Input
-                {...field}
-                name="measuredAt"
-                type="date"
-                defaultValue={todayLocalDateInputValue()}
-              />
+              <Input {...field} name="measuredAt" type="date" defaultValue={todayLocalDateOnly()} />
             )}
           </FormField>
           <Button type="submit" disabled={pending} size="sm" className={styles.submit}>

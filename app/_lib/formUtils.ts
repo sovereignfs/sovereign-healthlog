@@ -38,3 +38,12 @@ export function formatLocalDateOnly(dateStr: string): string {
   if (!date) return dateStr;
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
+
+/** Today as a local (not UTC) 'YYYY-MM-DD' string — for `<input type="date">`
+ * defaults and for lexicographic comparison against other 'YYYY-MM-DD'
+ * values (e.g. HLG-32's derived `ended` status). */
+export function todayLocalDateOnly(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}

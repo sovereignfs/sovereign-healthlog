@@ -6,12 +6,20 @@ import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { sdk } from '@sovereignfs/sdk';
-import { healthlogLabGroups, healthlogLabResults, healthlogMeasurements, healthlogProfiles } from '../_db/schema';
-import { formOptionalString, formString, now, parseLocalDateOnly } from './formUtils';
+import {
+  healthlogLabGroups,
+  healthlogLabResults,
+  healthlogMeasurements,
+  healthlogMedications,
+  healthlogProfiles,
+} from '../_db/schema';
+import { formOptionalString, formString, now, parseLocalDateOnly, todayLocalDateOnly } from './formUtils';
 import type { LabFlag, LabValueKind } from './labFormat';
 import { LAB_VALUE_KINDS, formatLabResultValue } from './labFormat';
 import { normalizeTestName } from './labMatching';
 import { FIXED_MEASUREMENT_TYPES } from './measurementTypes';
+import type { MedicationKind, MedicationStatus } from './medications';
+import { MEDICATION_KINDS, computeEffectiveStatus } from './medications';
 import type { PreferredUnits } from './units';
 import { DEFAULT_PREFERRED_UNITS, parsePreferredUnits, serializePreferredUnits } from './units';
 
@@ -877,4 +885,306 @@ export async function getPreviousLabResults(
       collectedAt: row.collectedAt,
       displayValue: formatLabResultValue(row),
     }));
+}
+
+export interface MedicationEntry {
+  id: string;
+  seriesId: string;
+  name: string;
+  kind: MedicationKind;
+  dose: string | null;
+  doseUnit: string | null;
+  route: string | null;
+  frequencyText: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  prescribingClinician: string | null;
+  pharmacy: string | null;
+  notes: string | null;
+  effectiveStatus: MedicationStatus;
+  versionCount: number;
+}
+
+/** Current (latest-per-series) medications, with HLG-32's status derived at
+ * read time — see `computeEffectiveStatus`'s own comment for why. */
+export async function listMedications(): Promise<MedicationEntry[]> {
+  const { db, userId, tenantId } = await getContext();
+  const rows = await db
+    .select()
+    .from(healthlogMedications)
+    .where(and(eq(healthlogMedications.tenantId, tenantId), eq(healthlogMedications.userId, userId)))
+    .orderBy(desc(healthlogMedications.createdAt));
+
+  // Rows are already createdAt-desc, so the first row seen per seriesId is
+  // that series' current version.
+  const latestBySeries = new Map<string, (typeof rows)[number]>();
+  const versionCounts = new Map<string, number>();
+  for (const row of rows) {
+    versionCounts.set(row.seriesId, (versionCounts.get(row.seriesId) ?? 0) + 1);
+    if (!latestBySeries.has(row.seriesId)) latestBySeries.set(row.seriesId, row);
+  }
+
+  const todayIso = todayLocalDateOnly();
+  return [...latestBySeries.values()].map((row) => ({
+    id: row.id,
+    seriesId: row.seriesId,
+    name: row.name,
+    kind: row.kind as MedicationKind,
+    dose: row.dose,
+    doseUnit: row.doseUnit,
+    route: row.route,
+    frequencyText: row.frequencyText,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    prescribingClinician: row.prescribingClinician,
+    pharmacy: row.pharmacy,
+    notes: row.notes,
+    effectiveStatus: computeEffectiveStatus(row.status, row.endDate, todayIso),
+    versionCount: versionCounts.get(row.seriesId) ?? 1,
+  }));
+}
+
+export interface MedicationVersion {
+  id: string;
+  dose: string | null;
+  doseUnit: string | null;
+  frequencyText: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  versionReason: string | null;
+  createdAt: number;
+}
+
+export async function listMedicationVersions(seriesId: string): Promise<MedicationVersion[]> {
+  const { db, userId, tenantId } = await getContext();
+  return db
+    .select({
+      id: healthlogMedications.id,
+      dose: healthlogMedications.dose,
+      doseUnit: healthlogMedications.doseUnit,
+      frequencyText: healthlogMedications.frequencyText,
+      startDate: healthlogMedications.startDate,
+      endDate: healthlogMedications.endDate,
+      versionReason: healthlogMedications.versionReason,
+      createdAt: healthlogMedications.createdAt,
+    })
+    .from(healthlogMedications)
+    .where(
+      and(
+        eq(healthlogMedications.seriesId, seriesId),
+        eq(healthlogMedications.tenantId, tenantId),
+        eq(healthlogMedications.userId, userId),
+      ),
+    )
+    .orderBy(desc(healthlogMedications.createdAt));
+}
+
+interface ParsedMedicationInput {
+  name: string;
+  kind: MedicationKind;
+  dose: string | null;
+  doseUnit: string | null;
+  route: string | null;
+  frequencyText: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  prescribingClinician: string | null;
+  pharmacy: string | null;
+  notes: string | null;
+  versionReason: string | null;
+}
+
+function parseMedicationInput(formData: FormData): ParsedMedicationInput | { error: string } {
+  const name = formString(formData, 'name');
+  if (!name) return { error: 'Enter a medication name.' };
+
+  const kindRaw = formString(formData, 'kind');
+  if (!(MEDICATION_KINDS as readonly string[]).includes(kindRaw)) {
+    return { error: 'Choose a kind.' };
+  }
+  const kind = kindRaw as MedicationKind;
+
+  const startDate = formOptionalString(formData, 'startDate');
+  if (startDate && !parseLocalDateOnly(startDate)) {
+    return { error: 'Enter a valid start date.' };
+  }
+
+  const endDate = formOptionalString(formData, 'endDate');
+  if (endDate && !parseLocalDateOnly(endDate)) {
+    return { error: 'Enter a valid end date.' };
+  }
+
+  return {
+    name,
+    kind,
+    dose: formOptionalString(formData, 'dose'),
+    doseUnit: formOptionalString(formData, 'doseUnit'),
+    route: formOptionalString(formData, 'route'),
+    frequencyText: formOptionalString(formData, 'frequencyText'),
+    startDate,
+    endDate,
+    prescribingClinician: formOptionalString(formData, 'prescribingClinician'),
+    pharmacy: formOptionalString(formData, 'pharmacy'),
+    notes: formOptionalString(formData, 'notes'),
+    versionReason: formOptionalString(formData, 'versionReason'),
+  };
+}
+
+export async function addMedication(
+  _prevState: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { db, userId, tenantId } = await getContext();
+  const parsed = parseMedicationInput(formData);
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+
+  const ts = now();
+  try {
+    await db.insert(healthlogMedications).values({
+      id: randomUUID(),
+      tenantId,
+      userId,
+      seriesId: randomUUID(),
+      name: parsed.name,
+      kind: parsed.kind,
+      dose: parsed.dose,
+      doseUnit: parsed.doseUnit,
+      route: parsed.route,
+      frequencyText: parsed.frequencyText,
+      startDate: parsed.startDate,
+      endDate: parsed.endDate,
+      prescribingClinician: parsed.prescribingClinician,
+      pharmacy: parsed.pharmacy,
+      status: 'active',
+      notes: parsed.notes,
+      versionReason: null,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+  } catch {
+    return { ok: false, error: 'Could not save this medication. Please try again.' };
+  }
+
+  revalidatePath('/healthlog/medications');
+  return { ok: true, message: 'Medication added.' };
+}
+
+export async function updateMedication(
+  _prevState: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { db, userId, tenantId } = await getContext();
+  const id = formString(formData, 'id');
+  if (!id) return { ok: false, error: 'Missing medication id.' };
+
+  const parsed = parseMedicationInput(formData);
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+
+  const [current] = await db
+    .select()
+    .from(healthlogMedications)
+    .where(
+      and(
+        eq(healthlogMedications.id, id),
+        eq(healthlogMedications.tenantId, tenantId),
+        eq(healthlogMedications.userId, userId),
+      ),
+    );
+  if (!current) return { ok: false, error: 'Medication not found.' };
+
+  // HLG-33: only dose/frequency changes are significant enough to version —
+  // everything else (name typo fix, added pharmacy, etc.) updates in place.
+  const versioned =
+    (current.dose ?? '') !== (parsed.dose ?? '') ||
+    (current.frequencyText ?? '') !== (parsed.frequencyText ?? '');
+
+  const ts = now();
+  try {
+    if (versioned) {
+      await db.insert(healthlogMedications).values({
+        id: randomUUID(),
+        tenantId,
+        userId,
+        seriesId: current.seriesId,
+        name: parsed.name,
+        kind: parsed.kind,
+        dose: parsed.dose,
+        doseUnit: parsed.doseUnit,
+        route: parsed.route,
+        frequencyText: parsed.frequencyText,
+        startDate: parsed.startDate,
+        endDate: parsed.endDate,
+        prescribingClinician: parsed.prescribingClinician,
+        pharmacy: parsed.pharmacy,
+        // Carries the archived override forward across versions; `ended` is
+        // never stored (see computeEffectiveStatus).
+        status: current.status,
+        notes: parsed.notes,
+        versionReason: parsed.versionReason,
+        createdAt: ts,
+        updatedAt: ts,
+      });
+    } else {
+      await db
+        .update(healthlogMedications)
+        .set({
+          name: parsed.name,
+          kind: parsed.kind,
+          dose: parsed.dose,
+          doseUnit: parsed.doseUnit,
+          route: parsed.route,
+          frequencyText: parsed.frequencyText,
+          startDate: parsed.startDate,
+          endDate: parsed.endDate,
+          prescribingClinician: parsed.prescribingClinician,
+          pharmacy: parsed.pharmacy,
+          notes: parsed.notes,
+          updatedAt: ts,
+        })
+        .where(
+          and(
+            eq(healthlogMedications.id, id),
+            eq(healthlogMedications.tenantId, tenantId),
+            eq(healthlogMedications.userId, userId),
+          ),
+        );
+    }
+  } catch {
+    return { ok: false, error: 'Could not save this medication. Please try again.' };
+  }
+
+  revalidatePath('/healthlog/medications');
+  return { ok: true, message: versioned ? 'New version saved.' : 'Medication updated.' };
+}
+
+export async function setMedicationArchived(id: string, archived: boolean): Promise<void> {
+  const { db, userId, tenantId } = await getContext();
+  await db
+    .update(healthlogMedications)
+    .set({ status: archived ? 'archived' : 'active', updatedAt: now() })
+    .where(
+      and(
+        eq(healthlogMedications.id, id),
+        eq(healthlogMedications.tenantId, tenantId),
+        eq(healthlogMedications.userId, userId),
+      ),
+    );
+  revalidatePath('/healthlog/medications');
+}
+
+/** Deletes every version in the series — "delete this medication" reads as
+ * removing the whole thing, not surgically dropping just its latest row and
+ * leaving stale history behind. */
+export async function deleteMedicationSeries(seriesId: string): Promise<void> {
+  const { db, userId, tenantId } = await getContext();
+  await db
+    .delete(healthlogMedications)
+    .where(
+      and(
+        eq(healthlogMedications.seriesId, seriesId),
+        eq(healthlogMedications.tenantId, tenantId),
+        eq(healthlogMedications.userId, userId),
+      ),
+    );
+  revalidatePath('/healthlog/medications');
 }
