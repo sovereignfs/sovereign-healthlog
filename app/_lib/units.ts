@@ -34,3 +34,28 @@ export function parsePreferredUnits(raw: string | null | undefined): PreferredUn
 export function serializePreferredUnits(units: PreferredUnits): string {
   return JSON.stringify(units);
 }
+
+/**
+ * Default unit offered when starting a new entry for a given measurement
+ * type — blood pressure and heart rate have a fixed unit (no preference),
+ * the rest come from `preferredUnits`, and an unrecognized (custom) type has
+ * no default at all since the user names it (and its unit) themselves.
+ */
+export function defaultUnitForType(type: string, preferredUnits: PreferredUnits): string {
+  switch (type) {
+    case 'height':
+      return preferredUnits.height;
+    case 'weight':
+      return preferredUnits.weight;
+    case 'temperature':
+      return preferredUnits.temperature;
+    case 'glucose':
+      return preferredUnits.glucose;
+    case 'blood_pressure':
+      return 'mmHg';
+    case 'heart_rate':
+      return 'bpm';
+    default:
+      return '';
+  }
+}

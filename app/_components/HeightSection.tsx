@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState } from 'react';
+import Link from 'next/link';
 import { Button, FormField, Input, Select } from '@sovereignfs/ui';
 import type { ActionResult, HeightEntry } from '../_lib/actions';
 import { addHeightEntry } from '../_lib/actions';
@@ -13,6 +14,15 @@ function formatDate(epochSeconds: number): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+/** Local (not UTC) 'YYYY-MM-DD' for today — `toISOString()` converts to UTC
+ * first, which can show the wrong default date near midnight in some
+ * timezones. */
+function todayLocalDateInputValue(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 export function HeightSection({
@@ -31,7 +41,12 @@ export function HeightSection({
 
   return (
     <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>Height</h2>
+      <div className={styles.header}>
+        <h2 className={styles.sectionTitle}>Height</h2>
+        <Link href="/healthlog/measurements" className={styles.historyLink}>
+          Full history →
+        </Link>
+      </div>
 
       <div className={styles.current}>
         {current ? (
@@ -85,7 +100,7 @@ export function HeightSection({
                 {...field}
                 name="measuredAt"
                 type="date"
-                defaultValue={new Date().toISOString().slice(0, 10)}
+                defaultValue={todayLocalDateInputValue()}
               />
             )}
           </FormField>

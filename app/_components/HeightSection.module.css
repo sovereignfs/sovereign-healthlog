@@ -4,10 +4,27 @@
   gap: var(--sv-space-3);
 }
 
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sv-space-3);
+}
+
 .sectionTitle {
   margin: 0;
   font-size: var(--sv-font-size-lg);
   font-weight: var(--sv-font-weight-semibold);
+  color: var(--sv-color-text-primary);
+}
+
+.historyLink {
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-muted);
+  text-decoration: none;
+}
+
+.historyLink:hover {
   color: var(--sv-color-text-primary);
 }
 

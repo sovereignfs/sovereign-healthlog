@@ -14,6 +14,9 @@ export default async function HealthLogPage() {
       <Link href="/healthlog/profile" className={styles.profileLink}>
         Go to your profile →
       </Link>
+      <Link href="/healthlog/measurements" className={styles.profileLink}>
+        Go to your measurements →
+      </Link>
     </div>
   );
 }
