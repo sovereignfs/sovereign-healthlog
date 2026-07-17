@@ -4,9 +4,13 @@ import { randomUUID } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { sdk } from '@sovereignfs/sdk';
-import { healthlogMeasurements, healthlogProfiles } from '../_db/schema';
+import { healthlogLabGroups, healthlogLabResults, healthlogMeasurements, healthlogProfiles } from '../_db/schema';
 import { formOptionalString, formString, now, parseLocalDateOnly } from './formUtils';
+import type { LabFlag, LabValueKind } from './labFormat';
+import { LAB_VALUE_KINDS, formatLabResultValue } from './labFormat';
+import { normalizeTestName } from './labMatching';
 import { FIXED_MEASUREMENT_TYPES } from './measurementTypes';
 import type { PreferredUnits } from './units';
 import { DEFAULT_PREFERRED_UNITS, parsePreferredUnits, serializePreferredUnits } from './units';
@@ -149,7 +153,7 @@ export async function updateProfile(
     return { ok: false, error: 'Could not save your profile. Please try again.' };
   }
 
-  revalidatePath('/profile');
+  revalidatePath('/healthlog/profile');
   return { ok: true, message: 'Profile saved.' };
 }
 
@@ -219,7 +223,7 @@ export async function addHeightEntry(
     return { ok: false, error: 'Could not save this height entry. Please try again.' };
   }
 
-  revalidatePath('/profile');
+  revalidatePath('/healthlog/profile');
   return { ok: true, message: 'Height entry added.' };
 }
 
@@ -361,8 +365,8 @@ export async function addMeasurement(
     return { ok: false, error: 'Could not save this measurement. Please try again.' };
   }
 
-  revalidatePath('/measurements');
-  revalidatePath('/profile');
+  revalidatePath('/healthlog/measurements');
+  revalidatePath('/healthlog/profile');
   return { ok: true, message: 'Measurement added.' };
 }
 
@@ -392,8 +396,8 @@ export async function updateMeasurement(
     return { ok: false, error: 'Could not save this measurement. Please try again.' };
   }
 
-  revalidatePath('/measurements');
-  revalidatePath('/profile');
+  revalidatePath('/healthlog/measurements');
+  revalidatePath('/healthlog/profile');
   return { ok: true, message: 'Measurement updated.' };
 }
 
@@ -408,6 +412,469 @@ export async function deleteMeasurement(id: string): Promise<void> {
         eq(healthlogMeasurements.userId, userId),
       ),
     );
-  revalidatePath('/measurements');
-  revalidatePath('/profile');
+  revalidatePath('/healthlog/measurements');
+  revalidatePath('/healthlog/profile');
+}
+
+export interface LabGroupSummary {
+  id: string;
+  title: string;
+  collectedAt: string;
+  reportedAt: string | null;
+  provider: string | null;
+  resultCount: number;
+}
+
+export interface LabGroupDetail {
+  id: string;
+  title: string;
+  collectedAt: string;
+  reportedAt: string | null;
+  provider: string | null;
+  notes: string | null;
+}
+
+export async function listLabGroups(): Promise<LabGroupSummary[]> {
+  const { db, userId, tenantId } = await getContext();
+  const groups = await db
+    .select({
+      id: healthlogLabGroups.id,
+      title: healthlogLabGroups.title,
+      collectedAt: healthlogLabGroups.collectedAt,
+      reportedAt: healthlogLabGroups.reportedAt,
+      provider: healthlogLabGroups.provider,
+    })
+    .from(healthlogLabGroups)
+    .where(and(eq(healthlogLabGroups.tenantId, tenantId), eq(healthlogLabGroups.userId, userId)))
+    .orderBy(desc(healthlogLabGroups.collectedAt));
+
+  // Counted in JS rather than a SQL GROUP BY — v0.1 personal-record data
+  // volumes are small, and this avoids pulling in `sql` template literals
+  // for a single query.
+  const resultRows = await db
+    .select({ groupId: healthlogLabResults.groupId })
+    .from(healthlogLabResults)
+    .where(and(eq(healthlogLabResults.tenantId, tenantId), eq(healthlogLabResults.userId, userId)));
+  const counts = new Map<string, number>();
+  for (const row of resultRows) counts.set(row.groupId, (counts.get(row.groupId) ?? 0) + 1);
+
+  return groups.map((group) => ({ ...group, resultCount: counts.get(group.id) ?? 0 }));
+}
+
+export async function getLabGroup(id: string): Promise<LabGroupDetail | null> {
+  const { db, userId, tenantId } = await getContext();
+  const [row] = await db
+    .select({
+      id: healthlogLabGroups.id,
+      title: healthlogLabGroups.title,
+      collectedAt: healthlogLabGroups.collectedAt,
+      reportedAt: healthlogLabGroups.reportedAt,
+      provider: healthlogLabGroups.provider,
+      notes: healthlogLabGroups.notes,
+    })
+    .from(healthlogLabGroups)
+    .where(
+      and(
+        eq(healthlogLabGroups.id, id),
+        eq(healthlogLabGroups.tenantId, tenantId),
+        eq(healthlogLabGroups.userId, userId),
+      ),
+    );
+  return row ?? null;
+}
+
+interface ParsedLabGroupInput {
+  title: string;
+  collectedAt: string;
+  reportedAt: string | null;
+  provider: string | null;
+  notes: string | null;
+}
+
+function parseLabGroupInput(formData: FormData): ParsedLabGroupInput | { error: string } {
+  const title = formString(formData, 'title');
+  if (!title) return { error: 'Enter a title.' };
+
+  const collectedAt = formString(formData, 'collectedAt');
+  if (!collectedAt || !parseLocalDateOnly(collectedAt)) {
+    return { error: 'Enter a valid collection date.' };
+  }
+
+  const reportedAt = formOptionalString(formData, 'reportedAt');
+  if (reportedAt && !parseLocalDateOnly(reportedAt)) {
+    return { error: 'Enter a valid report date.' };
+  }
+
+  return {
+    title,
+    collectedAt,
+    reportedAt,
+    provider: formOptionalString(formData, 'provider'),
+    notes: formOptionalString(formData, 'notes'),
+  };
+}
+
+export async function addLabGroup(
+  _prevState: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { db, userId, tenantId } = await getContext();
+  const parsed = parseLabGroupInput(formData);
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+
+  const id = randomUUID();
+  const ts = now();
+  try {
+    await db.insert(healthlogLabGroups).values({
+      id,
+      tenantId,
+      userId,
+      ...parsed,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+  } catch {
+    return { ok: false, error: 'Could not save this lab group. Please try again.' };
+  }
+
+  // Redirect straight into the new group — the reason to create one is to
+  // start adding results inside it. Outside the try/catch above: redirect()
+  // throws internally to unwind the render, which a broad catch would
+  // otherwise swallow as a save failure.
+  revalidatePath('/healthlog/labs');
+  redirect(`/healthlog/labs/${id}`);
+}
+
+export async function updateLabGroup(
+  _prevState: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { db, userId, tenantId } = await getContext();
+  const id = formString(formData, 'id');
+  if (!id) return { ok: false, error: 'Missing lab group id.' };
+
+  const parsed = parseLabGroupInput(formData);
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+
+  try {
+    await db
+      .update(healthlogLabGroups)
+      .set({ ...parsed, updatedAt: now() })
+      .where(
+        and(
+          eq(healthlogLabGroups.id, id),
+          eq(healthlogLabGroups.tenantId, tenantId),
+          eq(healthlogLabGroups.userId, userId),
+        ),
+      );
+  } catch {
+    return { ok: false, error: 'Could not save this lab group. Please try again.' };
+  }
+
+  revalidatePath('/healthlog/labs');
+  revalidatePath(`/healthlog/labs/${id}`);
+  return { ok: true, message: 'Lab group updated.' };
+}
+
+export async function deleteLabGroup(id: string): Promise<void> {
+  const { db, userId, tenantId } = await getContext();
+  // Sequential delete-then-delete, not db.transaction(): better-sqlite3's
+  // transaction() rejects an async callback at runtime even though the SDK's
+  // dialect-agnostic Db type lets `await db.transaction(async (tx) => ...)`
+  // type-check fine — same pitfall documented in sovereign-plainwrite's
+  // actions.ts. A crash between the two statements can leave orphaned result
+  // rows; low impact and self-healing (invisible, scoped under a group_id
+  // that no longer resolves to anything).
+  await db
+    .delete(healthlogLabResults)
+    .where(
+      and(
+        eq(healthlogLabResults.groupId, id),
+        eq(healthlogLabResults.tenantId, tenantId),
+        eq(healthlogLabResults.userId, userId),
+      ),
+    );
+  await db
+    .delete(healthlogLabGroups)
+    .where(
+      and(
+        eq(healthlogLabGroups.id, id),
+        eq(healthlogLabGroups.tenantId, tenantId),
+        eq(healthlogLabGroups.userId, userId),
+      ),
+    );
+  revalidatePath('/healthlog/labs');
+  redirect('/healthlog/labs');
+}
+
+export interface LabResultEntry {
+  id: string;
+  groupId: string;
+  testName: string;
+  normalizedTestName: string;
+  valueKind: LabValueKind;
+  numericValue: number | null;
+  textValue: string | null;
+  unit: string | null;
+  referenceLow: number | null;
+  referenceHigh: number | null;
+  referenceText: string | null;
+  flag: LabFlag | null;
+  tracked: boolean;
+  note: string | null;
+}
+
+export async function listLabResults(groupId: string): Promise<LabResultEntry[]> {
+  const { db, userId, tenantId } = await getContext();
+  const rows = await db
+    .select({
+      id: healthlogLabResults.id,
+      groupId: healthlogLabResults.groupId,
+      testName: healthlogLabResults.testName,
+      normalizedTestName: healthlogLabResults.normalizedTestName,
+      valueKind: healthlogLabResults.valueKind,
+      numericValue: healthlogLabResults.numericValue,
+      textValue: healthlogLabResults.textValue,
+      unit: healthlogLabResults.unit,
+      referenceLow: healthlogLabResults.referenceLow,
+      referenceHigh: healthlogLabResults.referenceHigh,
+      referenceText: healthlogLabResults.referenceText,
+      flag: healthlogLabResults.flag,
+      tracked: healthlogLabResults.tracked,
+      note: healthlogLabResults.note,
+    })
+    .from(healthlogLabResults)
+    .where(
+      and(
+        eq(healthlogLabResults.groupId, groupId),
+        eq(healthlogLabResults.tenantId, tenantId),
+        eq(healthlogLabResults.userId, userId),
+      ),
+    )
+    .orderBy(healthlogLabResults.createdAt);
+  return rows as LabResultEntry[];
+}
+
+interface ParsedLabResultInput {
+  testName: string;
+  normalizedTestName: string;
+  valueKind: LabValueKind;
+  numericValue: number | null;
+  textValue: string | null;
+  unit: string | null;
+  referenceLow: number | null;
+  referenceHigh: number | null;
+  referenceText: string | null;
+  flag: LabFlag | null;
+  tracked: boolean;
+  note: string | null;
+}
+
+const LAB_FLAGS = ['low', 'high', 'critical', 'abnormal'] as const;
+
+function parseLabResultInput(formData: FormData): ParsedLabResultInput | { error: string } {
+  const testName = formString(formData, 'testName');
+  if (!testName) return { error: 'Enter a test name.' };
+
+  const valueKindRaw = formString(formData, 'valueKind');
+  if (!(LAB_VALUE_KINDS as readonly string[]).includes(valueKindRaw)) {
+    return { error: 'Choose a value type.' };
+  }
+  const valueKind = valueKindRaw as LabValueKind;
+
+  let numericValue: number | null = null;
+  let textValue: string | null = null;
+
+  if (valueKind === 'numeric') {
+    const raw = formString(formData, 'numericValue');
+    const parsed = Number(raw);
+    if (!raw || Number.isNaN(parsed)) return { error: 'Enter a numeric value.' };
+    numericValue = parsed;
+  } else if (valueKind === 'text') {
+    textValue = formOptionalString(formData, 'textValue');
+    if (!textValue) return { error: 'Enter a value.' };
+  } else if (valueKind === 'positive_negative') {
+    const raw = formString(formData, 'positiveNegativeValue');
+    if (raw !== 'positive' && raw !== 'negative') return { error: 'Choose positive or negative.' };
+    textValue = raw;
+  } else {
+    const raw = formString(formData, 'detectedValue');
+    if (raw !== 'detected' && raw !== 'not_detected') {
+      return { error: 'Choose detected or not detected.' };
+    }
+    textValue = raw;
+  }
+
+  const unit = valueKind === 'numeric' ? formOptionalString(formData, 'unit') : null;
+
+  const referenceLowRaw = formString(formData, 'referenceLow');
+  const referenceLow = referenceLowRaw === '' ? null : Number(referenceLowRaw);
+  if (referenceLow != null && Number.isNaN(referenceLow)) {
+    return { error: 'Enter a valid reference range low.' };
+  }
+
+  const referenceHighRaw = formString(formData, 'referenceHigh');
+  const referenceHigh = referenceHighRaw === '' ? null : Number(referenceHighRaw);
+  if (referenceHigh != null && Number.isNaN(referenceHigh)) {
+    return { error: 'Enter a valid reference range high.' };
+  }
+
+  const flagRaw = formString(formData, 'flag');
+  const flag = (LAB_FLAGS as readonly string[]).includes(flagRaw) ? (flagRaw as LabFlag) : null;
+
+  return {
+    testName,
+    normalizedTestName: normalizeTestName(testName),
+    valueKind,
+    numericValue,
+    textValue,
+    unit,
+    referenceLow,
+    referenceHigh,
+    referenceText: formOptionalString(formData, 'referenceText'),
+    flag,
+    tracked: formString(formData, 'tracked') === 'true',
+    note: formOptionalString(formData, 'note'),
+  };
+}
+
+export async function addLabResult(
+  _prevState: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { db, userId, tenantId } = await getContext();
+  const groupId = formString(formData, 'groupId');
+  if (!groupId) return { ok: false, error: 'Missing lab group id.' };
+
+  const parsed = parseLabResultInput(formData);
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+
+  const ts = now();
+  try {
+    await db.insert(healthlogLabResults).values({
+      id: randomUUID(),
+      tenantId,
+      userId,
+      groupId,
+      ...parsed,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+  } catch {
+    return { ok: false, error: 'Could not save this lab result. Please try again.' };
+  }
+
+  revalidatePath(`/healthlog/labs/${groupId}`);
+  return { ok: true, message: 'Result added.' };
+}
+
+export async function updateLabResult(
+  _prevState: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { db, userId, tenantId } = await getContext();
+  const id = formString(formData, 'id');
+  const groupId = formString(formData, 'groupId');
+  if (!id || !groupId) return { ok: false, error: 'Missing lab result id.' };
+
+  const parsed = parseLabResultInput(formData);
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+
+  try {
+    await db
+      .update(healthlogLabResults)
+      .set({ ...parsed, updatedAt: now() })
+      .where(
+        and(
+          eq(healthlogLabResults.id, id),
+          eq(healthlogLabResults.tenantId, tenantId),
+          eq(healthlogLabResults.userId, userId),
+        ),
+      );
+  } catch {
+    return { ok: false, error: 'Could not save this lab result. Please try again.' };
+  }
+
+  revalidatePath(`/healthlog/labs/${groupId}`);
+  return { ok: true, message: 'Result updated.' };
+}
+
+export async function deleteLabResult(id: string, groupId: string): Promise<void> {
+  const { db, userId, tenantId } = await getContext();
+  await db
+    .delete(healthlogLabResults)
+    .where(
+      and(
+        eq(healthlogLabResults.id, id),
+        eq(healthlogLabResults.tenantId, tenantId),
+        eq(healthlogLabResults.userId, userId),
+      ),
+    );
+  revalidatePath(`/healthlog/labs/${groupId}`);
+}
+
+export async function setLabResultTracked(
+  id: string,
+  groupId: string,
+  tracked: boolean,
+): Promise<void> {
+  const { db, userId, tenantId } = await getContext();
+  await db
+    .update(healthlogLabResults)
+    .set({ tracked, updatedAt: now() })
+    .where(
+      and(
+        eq(healthlogLabResults.id, id),
+        eq(healthlogLabResults.tenantId, tenantId),
+        eq(healthlogLabResults.userId, userId),
+      ),
+    );
+  revalidatePath(`/healthlog/labs/${groupId}`);
+}
+
+export interface PreviousLabResult {
+  id: string;
+  groupTitle: string;
+  collectedAt: string;
+  displayValue: string;
+}
+
+/** HLG-24: name-based previous-value lookup, shown when entering or editing a result. */
+export async function getPreviousLabResults(
+  normalizedTestNameValue: string,
+  excludeResultId?: string,
+  limit = 3,
+): Promise<PreviousLabResult[]> {
+  if (!normalizedTestNameValue) return [];
+  const { db, userId, tenantId } = await getContext();
+  const rows = await db
+    .select({
+      id: healthlogLabResults.id,
+      valueKind: healthlogLabResults.valueKind,
+      numericValue: healthlogLabResults.numericValue,
+      textValue: healthlogLabResults.textValue,
+      unit: healthlogLabResults.unit,
+      groupTitle: healthlogLabGroups.title,
+      collectedAt: healthlogLabGroups.collectedAt,
+    })
+    .from(healthlogLabResults)
+    .innerJoin(healthlogLabGroups, eq(healthlogLabResults.groupId, healthlogLabGroups.id))
+    .where(
+      and(
+        eq(healthlogLabResults.tenantId, tenantId),
+        eq(healthlogLabResults.userId, userId),
+        eq(healthlogLabResults.normalizedTestName, normalizedTestNameValue),
+      ),
+    )
+    .orderBy(desc(healthlogLabGroups.collectedAt));
+
+  return rows
+    .filter((row) => row.id !== excludeResultId)
+    .slice(0, limit)
+    .map((row) => ({
+      id: row.id,
+      groupTitle: row.groupTitle,
+      collectedAt: row.collectedAt,
+      displayValue: formatLabResultValue(row),
+    }));
 }

@@ -1,0 +1,32 @@
+.row {
+  display: flex;
+  gap: var(--sv-space-3);
+  flex-wrap: wrap;
+}
+
+.row > * {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.previousHint {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-1);
+  padding: var(--sv-space-2) var(--sv-space-3);
+  border-radius: var(--sv-radius-md);
+  background-color: var(--sv-color-surface-raised);
+  font-size: var(--sv-font-size-sm);
+}
+
+.previousLabel {
+  color: var(--sv-color-text-muted);
+  font-weight: var(--sv-font-weight-medium);
+}
+
+.previousList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  color: var(--sv-color-text-primary);
+}

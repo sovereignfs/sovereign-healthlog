@@ -1,0 +1,52 @@
+.page {
+  padding: var(--sv-space-8) var(--sv-space-6);
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-6);
+}
+
+.groupList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-3);
+}
+
+.groupLink {
+  text-decoration: none;
+  color: inherit;
+}
+
+.groupCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-1);
+}
+
+.groupHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sv-space-3);
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: var(--sv-font-size-md);
+  font-weight: var(--sv-font-weight-semibold);
+  color: var(--sv-color-text-primary);
+}
+
+.groupDate {
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-muted);
+  white-space: nowrap;
+}
+
+.groupMeta {
+  display: flex;
+  gap: var(--sv-space-3);
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-muted);
+}

@@ -29,3 +29,12 @@ export function parseLocalDateOnly(dateStr: string): Date | null {
   const date = new Date(Number(year), Number(month) - 1, Number(day));
   return Number.isNaN(date.getTime()) ? null : date;
 }
+
+/** Display formatting for a 'YYYY-MM-DD' string, via `parseLocalDateOnly` so
+ * it never round-trips through UTC. Falls back to the raw string if it
+ * doesn't parse. */
+export function formatLocalDateOnly(dateStr: string): string {
+  const date = parseLocalDateOnly(dateStr);
+  if (!date) return dateStr;
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}

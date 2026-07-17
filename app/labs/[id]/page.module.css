@@ -1,0 +1,33 @@
+.page {
+  padding: var(--sv-space-8) var(--sv-space-6);
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-6);
+}
+
+.headerActions {
+  display: flex;
+  gap: var(--sv-space-2);
+}
+
+.notesCard {
+  color: var(--sv-color-text-primary);
+  font-size: var(--sv-font-size-sm);
+  white-space: pre-wrap;
+}
+
+.resultsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sv-space-4);
+}
+
+.resultsTitle {
+  margin: 0;
+  font-size: var(--sv-font-size-lg);
+  font-weight: var(--sv-font-weight-semibold);
+  color: var(--sv-color-text-primary);
+}
