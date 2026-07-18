@@ -32,6 +32,7 @@ import type { NoteCategory, NoteLinkType } from './notes';
 import { NOTE_CATEGORIES, NOTE_CATEGORY_LABELS, NOTE_LINK_TYPES } from './notes';
 import type { PreferredUnits } from './units';
 import { DEFAULT_PREFERRED_UNITS, parsePreferredUnits, serializePreferredUnits } from './units';
+import type { VisitSummaryData, VisitSummaryLabGroup } from './visitSummary';
 
 // DrizzleClient is typed as `unknown` in the SDK (dialect-agnostic contract).
 // We cast to the SQLite type here since this plugin's manifest resolves to SQLite only.
@@ -1726,4 +1727,94 @@ export async function searchHealthLog(query: string): Promise<SearchResults> {
   }));
 
   return { medications, labs, notes, measurements };
+}
+
+/**
+ * HLG-52's "recent measurements" — the single latest entry per type in use
+ * (every fixed type that has at least one recorded value, plus every custom
+ * type), not a fixed-type allowlist. Reuses `getLatestMeasurement` per type
+ * rather than one grouped query — v0.1's personal-record data volumes make
+ * the extra round trips cheap, same tradeoff `getDashboardSummary` already
+ * makes.
+ */
+export async function listRecentMeasurements(): Promise<MeasurementEntry[]> {
+  const customTypes = await listCustomTypesInUse();
+  const types = [...FIXED_MEASUREMENT_TYPES, ...customTypes];
+  const latestByType = await Promise.all(
+    types.map(async (type) => {
+      const rows = await listMeasurementsByType(type);
+      return rows[0] ?? null;
+    }),
+  );
+  return latestByType.filter((entry): entry is MeasurementEntry => entry !== null);
+}
+
+/**
+ * Selection options for the visit-summary builder (HLG-52) — every lab group
+ * and note the user could choose to include. Reuses `listLabGroups`/
+ * `listNotes` rather than a lighter-weight query, matching the same "reuse
+ * over duplicate grouping/label logic" tradeoff as `getDashboardSummary`.
+ */
+export async function getVisitSummaryOptions(): Promise<{
+  labGroups: LabGroupSummary[];
+  notes: NoteEntry[];
+}> {
+  const [labGroups, notes] = await Promise.all([listLabGroups(), listNotes()]);
+  return { labGroups, notes };
+}
+
+/**
+ * Gathers everything a visit summary packet needs (HLG-52): allergies,
+ * conditions, and demographics always come from the profile; active
+ * medications and recent measurements are always included; lab groups (with
+ * their results) and notes are limited to the user's selection from
+ * `getVisitSummaryOptions`'s lists. A selected id the user no longer owns
+ * (stale form submission) is silently dropped rather than erroring — same
+ * "show what you can" pattern as HL-04/05/06/07's own read paths.
+ */
+export async function getVisitSummaryData(
+  labGroupIds: string[],
+  noteIds: string[],
+): Promise<VisitSummaryData> {
+  const [profile, medications, measurements, allLabGroups, allNotes] = await Promise.all([
+    getProfile(),
+    listMedications(),
+    listRecentMeasurements(),
+    listLabGroups(),
+    listNotes(),
+  ]);
+
+  const selectedLabGroupIds = new Set(labGroupIds);
+  const selectedNoteIds = new Set(noteIds);
+  const selectedGroups = allLabGroups.filter((group) => selectedLabGroupIds.has(group.id));
+  const selectedNotes = allNotes.filter((note) => selectedNoteIds.has(note.id));
+
+  const labGroups: VisitSummaryLabGroup[] = await Promise.all(
+    selectedGroups.map(async (group) => ({
+      id: group.id,
+      title: group.title,
+      collectedAt: group.collectedAt,
+      provider: group.provider,
+      results: await listLabResults(group.id),
+    })),
+  );
+
+  return {
+    generatedAt: now(),
+    displayName: profile.displayName,
+    dateOfBirth: profile.dateOfBirth,
+    allergies: profile.allergies,
+    conditions: profile.conditions,
+    medications: medications.filter((medication) => medication.effectiveStatus === 'active'),
+    measurements: measurements.map((entry) => ({
+      type: entry.type,
+      label: (MEASUREMENT_TYPE_LABELS as Record<string, string>)[entry.type] ?? entry.type,
+      value: entry.value,
+      value2: entry.value2,
+      unit: entry.unit,
+      measuredAt: entry.measuredAt,
+    })),
+    labGroups,
+    notes: selectedNotes,
+  };
 }

@@ -1,0 +1,86 @@
+.page {
+  padding: var(--sv-space-8) var(--sv-space-6);
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-6);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sv-space-3);
+  flex-wrap: wrap;
+}
+
+.toolbarActions {
+  display: flex;
+  gap: var(--sv-space-2);
+}
+
+.summary {
+  color: var(--sv-color-text-primary);
+  line-height: 1.5;
+}
+
+.summary h1 {
+  font-size: var(--sv-font-size-2xl);
+  margin: 0 0 var(--sv-space-2);
+}
+
+.summary h2 {
+  font-size: var(--sv-font-size-lg);
+  margin: var(--sv-space-6) 0 var(--sv-space-2);
+}
+
+.summary h3 {
+  font-size: var(--sv-font-size-md);
+  margin: var(--sv-space-4) 0 var(--sv-space-1);
+}
+
+.meta {
+  margin: 0;
+  color: var(--sv-color-text-muted);
+  font-size: var(--sv-font-size-sm);
+}
+
+.disclaimer {
+  margin: var(--sv-space-2) 0 0;
+  color: var(--sv-color-text-muted);
+  font-size: var(--sv-font-size-xs);
+  font-style: italic;
+}
+
+.labGroup,
+.note {
+  margin-bottom: var(--sv-space-4);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--sv-font-size-sm);
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: var(--sv-space-2) var(--sv-space-3);
+  border-bottom: 1px solid var(--sv-color-border);
+}
+
+/* HLG-52's "PDF via browser print" — hide the toolbar (back link, download,
+   print buttons) so the printed/saved-as-PDF document is just the summary
+   itself, not the app chrome around it. */
+@media print {
+  .toolbar {
+    display: none;
+  }
+
+  .page {
+    padding: 0;
+    max-width: none;
+  }
+}

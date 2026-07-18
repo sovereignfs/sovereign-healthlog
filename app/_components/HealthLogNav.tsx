@@ -9,6 +9,7 @@ const NAV_ITEMS: { label: string; href: string }[] = [
   { label: 'Medications', href: '/healthlog/medications' },
   { label: 'Notes', href: '/healthlog/notes' },
   { label: 'Search', href: '/healthlog/search' },
+  { label: 'Exports', href: '/healthlog/exports' },
 ];
 
 /** Persistent plugin-wide nav — SPEC's own "Primary navigation" list. Added
