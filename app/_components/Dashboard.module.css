@@ -1,0 +1,120 @@
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-6);
+}
+
+.quickAdd {
+  display: flex;
+  gap: var(--sv-space-2);
+  flex-wrap: wrap;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sv-space-3);
+}
+
+@media (max-width: 640px) {
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cardLink {
+  text-decoration: none;
+  color: inherit;
+}
+
+.summaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-1);
+}
+
+.cardLabel {
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-muted);
+}
+
+.cardValue {
+  font-size: var(--sv-font-size-xl);
+  font-weight: var(--sv-font-weight-semibold);
+  color: var(--sv-color-text-primary);
+}
+
+.cardDate {
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-muted);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-2);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sv-space-3);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--sv-font-size-md);
+  font-weight: var(--sv-font-weight-semibold);
+  color: var(--sv-color-text-primary);
+}
+
+.sectionLink {
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-muted);
+  text-decoration: none;
+}
+
+.sectionLink:hover {
+  color: var(--sv-color-text-primary);
+}
+
+.emptyHint {
+  margin: 0;
+  font-size: var(--sv-font-size-sm);
+  color: var(--sv-color-text-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sv-space-1);
+}
+
+.listRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sv-space-3);
+  padding: var(--sv-space-2) var(--sv-space-3);
+  border-radius: var(--sv-radius-md);
+  background-color: var(--sv-color-surface-raised);
+  font-size: var(--sv-font-size-sm);
+}
+
+.listPrimary {
+  color: var(--sv-color-text-primary);
+  text-decoration: none;
+}
+
+a.listPrimary:hover {
+  color: var(--sv-color-text-muted);
+}
+
+.listMeta {
+  color: var(--sv-color-text-muted);
+  white-space: nowrap;
+}

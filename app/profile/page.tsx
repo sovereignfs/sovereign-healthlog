@@ -1,5 +1,5 @@
 import { Card, PageHeader } from '@sovereignfs/ui';
-import { BackLink } from '../_components/BackLink';
+import { HealthLogNav } from '../_components/HealthLogNav';
 import { HeightSection } from '../_components/HeightSection';
 import { ProfileForm } from '../_components/ProfileForm';
 import { getProfile, listHeightEntries } from '../_lib/actions';
@@ -10,7 +10,7 @@ export default async function ProfilePage() {
 
   return (
     <div className={styles.page}>
-      <BackLink href="/healthlog">Back</BackLink>
+      <HealthLogNav active="/healthlog/profile" />
 
       <PageHeader
         title="Profile"

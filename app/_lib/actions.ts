@@ -1482,3 +1482,71 @@ export async function deleteNote(id: string): Promise<void> {
     );
   revalidatePath('/healthlog/notes');
 }
+
+export interface DashboardMeasurement {
+  value: number;
+  value2: number | null;
+  unit: string;
+  measuredAt: number;
+}
+
+async function getLatestMeasurement(type: string): Promise<DashboardMeasurement | null> {
+  const { db, userId, tenantId } = await getContext();
+  const [row] = await db
+    .select({
+      value: healthlogMeasurements.value,
+      value2: healthlogMeasurements.value2,
+      unit: healthlogMeasurements.unit,
+      measuredAt: healthlogMeasurements.measuredAt,
+    })
+    .from(healthlogMeasurements)
+    .where(
+      and(
+        eq(healthlogMeasurements.tenantId, tenantId),
+        eq(healthlogMeasurements.userId, userId),
+        eq(healthlogMeasurements.type, type),
+      ),
+    )
+    .orderBy(desc(healthlogMeasurements.measuredAt))
+    .limit(1);
+  return row ?? null;
+}
+
+export interface DashboardSummary {
+  currentHeight: DashboardMeasurement | null;
+  latestWeight: DashboardMeasurement | null;
+  latestBloodPressure: DashboardMeasurement | null;
+  activeMedications: MedicationEntry[];
+  recentLabGroups: LabGroupSummary[];
+  recentNotes: NoteEntry[];
+}
+
+const DASHBOARD_RECENT_LIMIT = 3;
+
+/**
+ * HLG-04. Reuses the existing list functions (`listMedications`,
+ * `listLabGroups`, `listNotes`) rather than re-implementing their grouping/
+ * label-resolution logic here — each already does the nontrivial work
+ * (latest-per-series, result counts, link-label batching) correctly, and
+ * v0.1's personal-record data volumes make the extra round trips cheap.
+ */
+export async function getDashboardSummary(): Promise<DashboardSummary> {
+  const [currentHeight, latestWeight, latestBloodPressure, medications, labGroups, notes] =
+    await Promise.all([
+      getLatestMeasurement('height'),
+      getLatestMeasurement('weight'),
+      getLatestMeasurement('blood_pressure'),
+      listMedications(),
+      listLabGroups(),
+      listNotes(),
+    ]);
+
+  return {
+    currentHeight,
+    latestWeight,
+    latestBloodPressure,
+    activeMedications: medications.filter((medication) => medication.effectiveStatus === 'active'),
+    recentLabGroups: labGroups.slice(0, DASHBOARD_RECENT_LIMIT),
+    recentNotes: notes.slice(0, DASHBOARD_RECENT_LIMIT),
+  };
+}

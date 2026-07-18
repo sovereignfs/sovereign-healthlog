@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Card, EmptyState, PageHeader } from '@sovereignfs/ui';
-import { BackLink } from '../_components/BackLink';
+import { HealthLogNav } from '../_components/HealthLogNav';
 import { AddLabGroupDialog } from '../_components/LabGroupFormDialog';
 import { listLabGroups } from '../_lib/actions';
 import { formatLocalDateOnly } from '../_lib/formUtils';
@@ -11,7 +11,7 @@ export default async function LabsPage() {
 
   return (
     <div className={styles.page}>
-      <BackLink href="/healthlog">Back</BackLink>
+      <HealthLogNav active="/healthlog/labs" />
 
       <PageHeader
         title="Labs"

@@ -1,31 +1,19 @@
-import Link from 'next/link';
-import { sdk } from '@sovereignfs/sdk';
+import { PageHeader } from '@sovereignfs/ui';
+import { Dashboard } from './_components/Dashboard';
+import { HealthLogNav } from './_components/HealthLogNav';
+import { getDashboardSummary, getProfile } from './_lib/actions';
 import styles from './healthlog.module.css';
 
 export default async function HealthLogPage() {
-  const session = await sdk.auth.getSession();
+  const [summary, profile] = await Promise.all([getDashboardSummary(), getProfile()]);
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>HealthLog</h1>
-      <p className={styles.lead}>
-        {session ? `Hello, ${session.user.name}!` : 'Hello, world!'}
-      </p>
-      <Link href="/healthlog/profile" className={styles.profileLink}>
-        Go to your profile →
-      </Link>
-      <Link href="/healthlog/measurements" className={styles.profileLink}>
-        Go to your measurements →
-      </Link>
-      <Link href="/healthlog/labs" className={styles.profileLink}>
-        Go to your labs →
-      </Link>
-      <Link href="/healthlog/medications" className={styles.profileLink}>
-        Go to your medications →
-      </Link>
-      <Link href="/healthlog/notes" className={styles.profileLink}>
-        Go to your notes →
-      </Link>
+      <HealthLogNav active="/healthlog" />
+
+      <PageHeader title="Dashboard" description="Your health at a glance." />
+
+      <Dashboard summary={summary} preferredUnits={profile.preferredUnits} />
     </div>
   );
 }

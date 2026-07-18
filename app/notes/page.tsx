@@ -1,5 +1,5 @@
 import { PageHeader } from '@sovereignfs/ui';
-import { BackLink } from '../_components/BackLink';
+import { HealthLogNav } from '../_components/HealthLogNav';
 import { NotesView } from '../_components/NotesView';
 import { listNotes } from '../_lib/actions';
 import styles from './page.module.css';
@@ -9,7 +9,7 @@ export default async function NotesPage() {
 
   return (
     <div className={styles.page}>
-      <BackLink href="/healthlog">Back</BackLink>
+      <HealthLogNav active="/healthlog/notes" />
 
       <PageHeader
         title="Notes"

@@ -1,5 +1,5 @@
 import { PageHeader } from '@sovereignfs/ui';
-import { BackLink } from '../_components/BackLink';
+import { HealthLogNav } from '../_components/HealthLogNav';
 import { MeasurementsView } from '../_components/MeasurementsView';
 import type { MeasurementEntry } from '../_lib/actions';
 import { getProfile, listCustomTypesInUse, listMeasurementsByType } from '../_lib/actions';
@@ -19,7 +19,7 @@ export default async function MeasurementsPage() {
 
   return (
     <div className={styles.page}>
-      <BackLink href="/healthlog">Back</BackLink>
+      <HealthLogNav active="/healthlog/measurements" />
 
       <PageHeader
         title="Measurements"

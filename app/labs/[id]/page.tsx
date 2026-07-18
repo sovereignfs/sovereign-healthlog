@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { Card, PageHeader } from '@sovereignfs/ui';
 import { BackLink } from '../../_components/BackLink';
 import { DeleteLabGroupButton } from '../../_components/DeleteLabGroupButton';
+import { HealthLogNav } from '../../_components/HealthLogNav';
 import { EditLabGroupDialog } from '../../_components/LabGroupFormDialog';
 import { AddLabResultDialog } from '../../_components/LabResultFormDialog';
 import { LabResultsTable } from '../../_components/LabResultsTable';
@@ -26,6 +27,7 @@ export default async function LabGroupPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className={styles.page}>
+      <HealthLogNav active="/healthlog/labs" />
       <BackLink href="/healthlog/labs">Back to labs</BackLink>
 
       <PageHeader
