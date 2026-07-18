@@ -1,7 +1,7 @@
 'use server';
 
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, or } from 'drizzle-orm';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -27,9 +27,9 @@ import { LAB_VALUE_KINDS, formatLabResultValue } from './labFormat';
 import { normalizeTestName } from './labMatching';
 import { FIXED_MEASUREMENT_TYPES, MEASUREMENT_TYPE_LABELS } from './measurementTypes';
 import type { MedicationKind, MedicationStatus } from './medications';
-import { MEDICATION_KINDS, computeEffectiveStatus } from './medications';
+import { MEDICATION_KIND_LABELS, MEDICATION_KINDS, computeEffectiveStatus } from './medications';
 import type { NoteCategory, NoteLinkType } from './notes';
-import { NOTE_CATEGORIES, NOTE_LINK_TYPES } from './notes';
+import { NOTE_CATEGORIES, NOTE_CATEGORY_LABELS, NOTE_LINK_TYPES } from './notes';
 import type { PreferredUnits } from './units';
 import { DEFAULT_PREFERRED_UNITS, parsePreferredUnits, serializePreferredUnits } from './units';
 
@@ -1549,4 +1549,181 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
     recentLabGroups: labGroups.slice(0, DASHBOARD_RECENT_LIMIT),
     recentNotes: notes.slice(0, DASHBOARD_RECENT_LIMIT),
   };
+}
+
+export interface SearchResultItem {
+  id: string;
+  label: string;
+  meta: string;
+  href: string;
+}
+
+export interface SearchResults {
+  medications: SearchResultItem[];
+  labs: SearchResultItem[];
+  notes: SearchResultItem[];
+  measurements: SearchResultItem[];
+}
+
+const EMPTY_SEARCH_RESULTS: SearchResults = {
+  medications: [],
+  labs: [],
+  notes: [],
+  measurements: [],
+};
+
+const SEARCH_RESULT_LIMIT = 20;
+
+/**
+ * HLG-50. SQLite's `LIKE` is case-insensitive for ASCII by default, so no
+ * explicit lowercasing is needed on either side. `%`/`_` in the query are
+ * passed through as literal SQL wildcards rather than escaped — a user
+ * searching for a literal percent sign gets slightly surprising matches,
+ * accepted as a v0.1 limitation rather than adding escaping complexity for
+ * an edge case a personal-record search rarely hits.
+ */
+export async function searchHealthLog(query: string): Promise<SearchResults> {
+  const trimmed = query.trim();
+  if (!trimmed) return EMPTY_SEARCH_RESULTS;
+
+  const { db, userId, tenantId } = await getContext();
+  const pattern = `%${trimmed}%`;
+
+  const [medicationRows, labResultRows, labGroupRows, noteRows, measurementRows] = await Promise.all([
+    // Medications: matched by name; deduped to latest-per-series below.
+    db
+      .select()
+      .from(healthlogMedications)
+      .where(
+        and(
+          eq(healthlogMedications.tenantId, tenantId),
+          eq(healthlogMedications.userId, userId),
+          like(healthlogMedications.name, pattern),
+        ),
+      )
+      .orderBy(desc(healthlogMedications.createdAt)),
+    // Lab results matched by test name.
+    db
+      .select({
+        id: healthlogLabResults.id,
+        groupId: healthlogLabResults.groupId,
+        testName: healthlogLabResults.testName,
+      })
+      .from(healthlogLabResults)
+      .where(
+        and(
+          eq(healthlogLabResults.tenantId, tenantId),
+          eq(healthlogLabResults.userId, userId),
+          like(healthlogLabResults.testName, pattern),
+        ),
+      )
+      .limit(SEARCH_RESULT_LIMIT),
+    // Lab groups matched by provider.
+    db
+      .select({
+        id: healthlogLabGroups.id,
+        title: healthlogLabGroups.title,
+        provider: healthlogLabGroups.provider,
+      })
+      .from(healthlogLabGroups)
+      .where(
+        and(
+          eq(healthlogLabGroups.tenantId, tenantId),
+          eq(healthlogLabGroups.userId, userId),
+          like(healthlogLabGroups.provider, pattern),
+        ),
+      )
+      .limit(SEARCH_RESULT_LIMIT),
+    // Notes matched by title or body.
+    db
+      .select()
+      .from(healthlogNotes)
+      .where(
+        and(
+          eq(healthlogNotes.tenantId, tenantId),
+          eq(healthlogNotes.userId, userId),
+          or(like(healthlogNotes.title, pattern), like(healthlogNotes.body, pattern)),
+        ),
+      )
+      .orderBy(desc(healthlogNotes.notedAt))
+      .limit(SEARCH_RESULT_LIMIT),
+    // Measurements matched by their free-text note.
+    db
+      .select()
+      .from(healthlogMeasurements)
+      .where(
+        and(
+          eq(healthlogMeasurements.tenantId, tenantId),
+          eq(healthlogMeasurements.userId, userId),
+          like(healthlogMeasurements.note, pattern),
+        ),
+      )
+      .orderBy(desc(healthlogMeasurements.measuredAt))
+      .limit(SEARCH_RESULT_LIMIT),
+  ]);
+
+  const seenSeries = new Set<string>();
+  const medications: SearchResultItem[] = [];
+  for (const row of medicationRows) {
+    if (seenSeries.has(row.seriesId)) continue;
+    seenSeries.add(row.seriesId);
+    medications.push({
+      id: row.id,
+      label: row.name,
+      meta:
+        [row.dose, row.doseUnit].filter(Boolean).join(' ') ||
+        MEDICATION_KIND_LABELS[row.kind as MedicationKind],
+      href: '/healthlog/medications',
+    });
+    if (medications.length >= SEARCH_RESULT_LIMIT) break;
+  }
+
+  // Lab result matches need their group's title for context — batched, not
+  // one query per result.
+  const groupIdsForResults = [...new Set(labResultRows.map((row) => row.groupId))];
+  const groupTitleById = new Map<string, string>();
+  if (groupIdsForResults.length > 0) {
+    const groups = await db
+      .select({ id: healthlogLabGroups.id, title: healthlogLabGroups.title })
+      .from(healthlogLabGroups)
+      .where(
+        and(
+          eq(healthlogLabGroups.tenantId, tenantId),
+          eq(healthlogLabGroups.userId, userId),
+          inArray(healthlogLabGroups.id, groupIdsForResults),
+        ),
+      );
+    for (const group of groups) groupTitleById.set(group.id, group.title);
+  }
+
+  const labs: SearchResultItem[] = [
+    ...labGroupRows.map((row) => ({
+      id: row.id,
+      label: row.title,
+      meta: row.provider ?? '',
+      href: `/healthlog/labs/${row.id}`,
+    })),
+    ...labResultRows.map((row) => ({
+      id: row.id,
+      label: row.testName,
+      meta: groupTitleById.get(row.groupId) ?? '',
+      href: `/healthlog/labs/${row.groupId}`,
+    })),
+  ].slice(0, SEARCH_RESULT_LIMIT);
+
+  const notes: SearchResultItem[] = noteRows.map((row) => ({
+    id: row.id,
+    label: row.title,
+    meta: NOTE_CATEGORY_LABELS[row.category as NoteCategory],
+    href: '/healthlog/notes',
+  }));
+
+  const measurements: SearchResultItem[] = measurementRows.map((row) => ({
+    id: row.id,
+    label: `${(MEASUREMENT_TYPE_LABELS as Record<string, string>)[row.type] ?? row.type} — ${row.note ?? ''}`,
+    meta: epochToLocalDateOnly(row.measuredAt),
+    href: '/healthlog/measurements',
+  }));
+
+  return { medications, labs, notes, measurements };
 }
