@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Button } from '@sovereignfs/ui';
 import { BackLink } from '../../_components/BackLink';
 import { PrintButton } from '../../_components/PrintButton';
+import { recordActivity } from '../../_lib/activity';
 import { getVisitSummaryData } from '../../_lib/actions';
 import { formatLocalDateOnly, epochToLocalDateOnly } from '../../_lib/formUtils';
 import { LAB_FLAG_LABELS, formatLabResultValue } from '../../_lib/labFormat';
@@ -46,6 +47,15 @@ export default async function VisitSummaryPage({
   const labGroupIds = toArray(params.labGroupIds);
   const noteIds = toArray(params.noteIds);
   const data = await getVisitSummaryData(labGroupIds, noteIds);
+
+  // HL-12/SPEC's audit-metadata note: log that a summary was viewed/printed,
+  // with item counts and format only — never test names, note titles, or
+  // values. Same event shape as the Markdown download route.
+  void recordActivity({
+    action: 'healthlog.visit_summary.generated',
+    summary: 'Generated a visit summary (print/PDF)',
+    metadata: { format: 'print', labGroupCount: data.labGroups.length, noteCount: data.notes.length },
+  });
 
   const downloadHref = `/healthlog/exports/summary/download?${labGroupIds
     .map((id) => `labGroupIds=${encodeURIComponent(id)}`)

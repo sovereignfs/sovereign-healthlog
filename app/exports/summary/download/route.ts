@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { sdk } from '@sovereignfs/sdk';
+import { recordActivity } from '../../../_lib/activity';
 import { getVisitSummaryData } from '../../../_lib/actions';
 import { buildVisitSummaryMarkdown } from '../../../_lib/visitSummary';
 
@@ -17,6 +18,14 @@ export async function GET(request: NextRequest): Promise<Response> {
   const noteIds = request.nextUrl.searchParams.getAll('noteIds');
   const data = await getVisitSummaryData(labGroupIds, noteIds);
   const markdown = buildVisitSummaryMarkdown(data);
+
+  // HL-12/SPEC's audit-metadata note: log that a summary was generated, with
+  // item counts and format only — never test names, note titles, or values.
+  void recordActivity({
+    action: 'healthlog.visit_summary.generated',
+    summary: 'Generated a visit summary (Markdown)',
+    metadata: { format: 'markdown', labGroupCount: data.labGroups.length, noteCount: data.notes.length },
+  });
 
   return new Response(markdown, {
     headers: {
