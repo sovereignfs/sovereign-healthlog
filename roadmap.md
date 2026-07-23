@@ -63,6 +63,7 @@ No platform blockers — every SDK surface this phase needs (`sdk.auth`,
 | HL-11 | Visit-summary export: user-selected Markdown or PDF-ready HTML packet (active medications, allergies, conditions, recent measurements, selected labs, selected notes); PDF via browser print in v0.1, no server-side rendering (HLG-52). | HL-08 | ✅ |
 | HL-12 | Activity logging via `sdk.activity` for export/summary-generation events — log the action, never the health content (per SPEC's audit-metadata note). | HL-10, HL-11 | ✅ |
 | HL-13 | v0.1 hardening pass: tenant/owner-scoping test sweep across all six tables, medication-versioning edge cases (`series_id` linkage on dose/frequency change), export/import round-trip test, delete-cascade test, non-diagnostic-copy review of dashboard/summary strings. | HL-12 | ✅ |
+| HL-25 | Post-v0.1 hardening: set `database.requireEncryption: true` in the manifest (RFC 0071, platform 0.44.0+) — health data warrants demanding platform-enforced at-rest encryption rather than leaving it to instance-wide operator opt-in. Raise-only: this can only add a guarantee, never remove one. Bumped `compatibility.minPlatformVersion` to `0.44.0` accordingly. | HL-13 | ✅ |
 
 **v0.1 is feature-complete after HL-13.**
 

@@ -26,6 +26,15 @@ pnpm dev
 
 The app is served at `/healthlog` once composed by the platform.
 
+**This plugin declares `database.requireEncryption: true`** (raise-only per
+RFC 0071 — a plugin can demand at-rest encryption, never turn it off). A
+platform host must have `SOVEREIGN_DB_ENCRYPTION_KEY` set before HealthLog is
+installed, or the **entire platform refuses to start**, naming this plugin in
+the error. This is not scoped to just HealthLog failing to load — see
+`docs/self-hosting.md`'s "SQLite at-rest encryption" section on the platform
+for how to set the key (fresh instance) or run `sv db encrypt` (existing
+plaintext instance) before adding this plugin.
+
 ## Current scope
 
 This repository is at the bootstrap stage (roadmap task HL-00): manifest,
@@ -45,6 +54,6 @@ unbuilt platform capability (`sdk.jobs`, `sdk.tools`).
 | Plugin ID    | `fs.sovereign.healthlog`          |
 | Route prefix | `/healthlog`                      |
 | Permissions  | `auth:session`, `db:readWrite`    |
-| Min platform | `0.19.0`                          |
+| Min platform | `0.44.0`                          |
 | Table prefix | `healthlog_`                      |
-| Database     | isolated SQLite                   |
+| Database     | isolated SQLite, at-rest encryption required (`database.requireEncryption`, RFC 0071) |

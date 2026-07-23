@@ -56,8 +56,9 @@ trend summary must be framed as informational context only.
 | `adminOnly`                        | omitted (`false`)                                             |
 | `icon`                             | `icon.svg`                                                    |
 | `permissions`                      | `auth:session`, `db:readWrite`, `data:provide`, `activity:write` |
+| `database.requireEncryption`       | `true` (RFC 0071 — raise-only at-rest encryption demand)      |
 | `repository`                       | `https://github.com/sovereignfs/sovereign-healthlog`   |
-| `compatibility.minPlatformVersion` | `0.10.0`                                                      |
+| `compatibility.minPlatformVersion` | `0.44.0`                                                      |
 
 Proposed `manifest.json`:
 
@@ -74,7 +75,8 @@ Proposed `manifest.json`:
   "shell": "default",
   "database": {
     "isolation": "isolated",
-    "dialect": "sqlite"
+    "dialect": "sqlite",
+    "requireEncryption": true
   },
   "icon": "icon.svg",
   "permissions": [
@@ -85,10 +87,20 @@ Proposed `manifest.json`:
   ],
   "repository": "https://github.com/sovereignfs/sovereign-healthlog",
   "compatibility": {
-    "minPlatformVersion": "0.10.0"
+    "minPlatformVersion": "0.44.0"
   }
 }
 ```
+
+`database.requireEncryption: true` (RFC 0071) demands that the platform's
+SQLite at-rest encryption key be set before HealthLog is installed — raise-only,
+so this can only add a security guarantee, never remove one the operator has
+already enabled instance-wide. Health data is exactly the "worth the operator
+friction" case this manifest field exists for: an operator without
+`SOVEREIGN_DB_ENCRYPTION_KEY` set gets a clear, plugin-naming refusal at
+platform startup, not a silently-unencrypted health record store. Requires
+`compatibility.minPlatformVersion` ≥ `0.44.0`, the platform version this
+manifest field shipped in — an older platform would not know to enforce it.
 
 `storage:readWrite`, `notifications:send`, and `jobs:*` are intentionally not
 required for v0.1. They become relevant when document attachments, medication
@@ -111,6 +123,16 @@ clear revocation.
 
 Admin users do not get special access to other users' HealthLog records through
 the plugin UI.
+
+HealthLog's manifest sets `database.requireEncryption: true` (RFC 0071): its
+isolated SQLite database must be encrypted at rest, and the platform enforces
+this at startup — raise-only, so it demands more than the instance-wide
+default rather than opting out of it. Health data is exactly the case this
+field exists for. This protects a stolen disk, leaked volume snapshot, or
+copied database file; it does not protect against a compromised running
+process or an operator who holds the key (see RFC 0060's client-side
+encryption for that tier, and `docs/security.md` on the platform for the
+full distinction).
 
 ---
 
@@ -533,3 +555,6 @@ layer.
 ## Changelog
 
 - **0.1 (June 2026):** Initial proposal.
+- **0.2 (July 2026):** `database.requireEncryption: true` added (RFC 0071) —
+  HealthLog now demands platform-enforced at-rest encryption for its isolated
+  database; `compatibility.minPlatformVersion` raised to `0.44.0` accordingly.
